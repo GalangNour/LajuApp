@@ -18,8 +18,19 @@ export const colors = {
 
   // Semantic
   success:        '#1D9E75',
+  successAlt:     '#22c984',
   error:          '#E24B4A',
   warning:        '#eea400',
+
+  // Dark surfaces (activity & tracking screens)
+  surface:        '#021820',
+  surface2:       '#032533',
+  surface3:       '#0a3344',
+  surfaceBorder:  'rgba(255,255,255,0.07)',
+  onSurface:      '#ffffff',
+  onSurfaceDim:   'rgba(255,255,255,0.5)',
+  secondaryDim:   'rgba(238,164,0,0.15)',
+  successAltDim:  'rgba(34,201,132,0.15)',
 } as const
 
 export const fonts = {

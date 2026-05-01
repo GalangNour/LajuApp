@@ -1,15 +1,10 @@
 import { useState, useCallback } from 'react'
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
+import type { Coordinate } from '../types/activity'
 
+export type { Coordinate } from '../types/activity'
 export const LOCATION_TASK = 'background-location-task'
-
-export type Coordinate = {
-  latitude: number
-  longitude: number
-  altitude: number | null
-  timestamp: number
-}
 
 type LocationCallback = (coord: Coordinate) => void
 let _onLocation: LocationCallback | null = null

@@ -1,19 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { Coordinate } from '../hooks/useGps'
+import type { Activity } from '../types/activity'
+
+export type { Activity } from '../types/activity'
 
 const KEY = 'activities'
-
-export type Activity = {
-  id: string
-  type: 'run' | 'ride' | 'walk'
-  coordinates: Coordinate[]
-  durationSeconds: number
-  distanceMeters: number
-  calories: number
-  elevationGain: number
-  startedAt: string
-  synced: boolean
-}
 
 export async function saveActivity(data: Omit<Activity, 'id' | 'synced'>): Promise<Activity> {
   const activity: Activity = { ...data, id: `activity_${Date.now()}`, synced: false }

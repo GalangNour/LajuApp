@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Coordinate } from './useGps'
+import type { Coordinate } from '../types/activity'
 
 function haversine(a: Coordinate, b: Coordinate): number {
   const R = 6371000

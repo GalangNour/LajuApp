@@ -1,28 +1,31 @@
 import { ActivityIndicator, View } from 'react-native'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { useFonts } from './hooks/useFonts'
 import { colors } from './styles/theme'
-import type { Activity } from './lib/activityStorage'
+import type { Activity } from './types/activity'
 
 import LoginScreen from './screens/LoginScreen'
 import RegisterScreen from './screens/RegisterScreen'
-import HomeScreen from './screens/HomeScreen'
 import PermissionTestScreen from './screens/PermissionTestScreen'
 import LiveScreen from './screens/LiveScreen'
 import ActivitySummaryScreen from './screens/ActivitySummaryScreen'
+import TabNavigator from './navigation/TabNavigator'
 
 export type RootStackParamList = {
-  Login: undefined
-  Register: undefined
-  Home: undefined
-  PermissionTest: undefined
-  Live: undefined
+  Login:           undefined
+  Register:        undefined
+  MainTabs:        undefined
+  Live:            undefined
   ActivitySummary: { activity: Activity }
+  PermissionTest:  undefined
 }
 
-const Stack = createNativeStackNavigator<RootStackParamList>()
+const Stack       = createNativeStackNavigator<RootStackParamList>()
+const queryClient = new QueryClient()
 
 function Navigator() {
   const { session, loading } = useAuth()
@@ -37,14 +40,16 @@ function Navigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {session ? (
         <>
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Live" component={LiveScreen} />
-          <Stack.Screen name="ActivitySummary" component={ActivitySummaryScreen} options={{ headerShown: true, title: 'Ringkasan' }} />
-          <Stack.Screen name="PermissionTest" component={PermissionTestScreen} options={{ headerShown: true, title: 'Test Lokasi' }} />
+          <Stack.Screen name="MainTabs"        component={TabNavigator} />
+          <Stack.Screen name="Live"            component={LiveScreen} />
+          <Stack.Screen name="ActivitySummary" component={ActivitySummaryScreen}
+                        options={{ headerShown: true, title: 'Ringkasan' }} />
+          <Stack.Screen name="PermissionTest"  component={PermissionTestScreen}
+                        options={{ headerShown: true, title: 'Test Lokasi' }} />
         </>
       ) : (
         <>
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Login"    component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>
       )}
@@ -62,10 +67,14 @@ export default function App() {
   )
 
   return (
-    <AuthProvider>
-      <NavigationContainer>
-        <Navigator />
-      </NavigationContainer>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <NavigationContainer>
+            <Navigator />
+          </NavigationContainer>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   )
 }

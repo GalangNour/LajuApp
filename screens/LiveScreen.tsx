@@ -1,249 +1,225 @@
-// screens/LiveTrackingScreen.tsx
 import { useEffect, useRef, useState } from 'react'
-import {
-    View, Text, TouchableOpacity, StyleSheet,
-    SafeAreaView, Alert, Dimensions
-} from 'react-native'
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import Ionicons from '@expo/vector-icons/Ionicons'
 import MapView, { Polyline, Marker } from 'react-native-maps'
 import { useKeepAwake } from 'expo-keep-awake'
+import { useNavigation } from '@react-navigation/native'
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useGps } from '../hooks/useGps'
 import { useMetrics } from '../hooks/useMetrix'
 import { useStopwatch } from '../hooks/useStopwatch'
 import { useLocationPermission } from '../hooks/useLocationPermission'
 import { saveActivity } from '../lib/activityStorage'
-import { useNavigation } from '@react-navigation/native'
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '../App'
+import s, { liveMapStyle } from '../styles/live'
 
 type TrackingState = 'idle' | 'running' | 'paused'
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Live'>
 
-export default function LiveTrackingScreen() {
-    useKeepAwake() // layar tidak mati saat tracking
+export default function LiveScreen() {
+  useKeepAwake()
 
-    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Live'>>()
-    const mapRef = useRef<MapView>(null)
-    const [trackingState, setTrackingState] = useState<TrackingState>('idle')
-    const [activityType, setActivityType] = useState<'run' | 'ride' | 'walk'>('run')
+  const navigation = useNavigation<Nav>()
+  const mapRef     = useRef<MapView>(null)
+  const [trackingState, setTrackingState] = useState<TrackingState>('idle')
+  const [locked,        setLocked]        = useState(false)
 
-    const { status } = useLocationPermission()
-    const { currentLocation, coordinates, startTracking, stopTracking } = useGps()
-    const { seconds, formatted: duration, start, pause, reset } = useStopwatch()
-    const metrics = useMetrics(coordinates, seconds)
+  const { status }                                         = useLocationPermission()
+  const { currentLocation, coordinates, startTracking, stopTracking } = useGps()
+  const { seconds, formatted: duration, start, pause, reset }         = useStopwatch()
+  const metrics = useMetrics(coordinates, seconds)
 
-    // Auto-follow lokasi user di peta
-    useEffect(() => {
-        if (!currentLocation) return
-        mapRef.current?.animateToRegion({
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-            latitudeDelta: 0.005,
-            longitudeDelta: 0.005,
-        }, 500)
-    }, [currentLocation])
+  useEffect(() => {
+    if (!currentLocation) return
+    mapRef.current?.animateToRegion({
+      latitude:      currentLocation.latitude,
+      longitude:     currentLocation.longitude,
+      latitudeDelta:  0.005,
+      longitudeDelta: 0.005,
+    }, 500)
+  }, [currentLocation])
 
-    const handleStart = async () => {
-        if (status !== 'granted') {
-            Alert.alert('GPS belum diizinkan', 'Aktifkan izin lokasi di pengaturan.')
-            return
-        }
-        await startTracking()
-        start()
-        setTrackingState('running')
+  const handleRecenter = () => {
+    if (!currentLocation) return
+    mapRef.current?.animateToRegion({
+      latitude:      currentLocation.latitude,
+      longitude:     currentLocation.longitude,
+      latitudeDelta:  0.005,
+      longitudeDelta: 0.005,
+    }, 400)
+  }
+
+  const handleStart = async () => {
+    if (status !== 'granted') {
+      Alert.alert('GPS belum diizinkan', 'Aktifkan izin lokasi di pengaturan.')
+      return
     }
+    await startTracking()
+    start()
+    setTrackingState('running')
+  }
 
-    const handlePause = async () => {
-        await stopTracking()
-        pause()
-        setTrackingState('paused')
-    }
+  const handlePause = async () => {
+    await stopTracking()
+    pause()
+    setTrackingState('paused')
+  }
 
-    const handleResume = async () => {
-        await startTracking()
-        start()
-        setTrackingState('running')
-    }
+  const handleResume = async () => {
+    await startTracking()
+    start()
+    setTrackingState('running')
+  }
 
-    const handleFinish = () => {
-        Alert.alert(
-            'Selesai?',
-            'Aktivitas akan disimpan.',
-            [
-                { text: 'Batal', style: 'cancel' },
-                {
-                    text: 'Selesai',
-                    onPress: async () => {
-                        await stopTracking()
-                        pause()
+  const handleFinish = () => {
+    Alert.alert('Selesai?', 'Aktivitas akan disimpan.', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Selesai',
+        onPress: async () => {
+          await stopTracking()
+          pause()
+          const activity = await saveActivity({
+            type:            'run',
+            coordinates,
+            durationSeconds:  seconds,
+            distanceMeters:   metrics.distanceMeters,
+            calories:         metrics.calories,
+            elevationGain:    metrics.elevationGain,
+            startedAt:        new Date(coordinates[0]?.timestamp ?? Date.now()).toISOString(),
+          })
+          reset()
+          navigation.navigate('ActivitySummary', { activity })
+        },
+      },
+    ])
+  }
 
-                        const activity = await saveActivity({
-                            type: activityType,
-                            coordinates,
-                            durationSeconds: seconds,
-                            distanceMeters: metrics.distanceMeters,
-                            calories: metrics.calories,
-                            elevationGain: metrics.elevationGain,
-                            startedAt: new Date(
-                                coordinates[0]?.timestamp ?? Date.now()
-                            ).toISOString(),
-                        })
+  const polylineCoords = coordinates.map(c => ({ latitude: c.latitude, longitude: c.longitude }))
 
-                        reset()
-                        // Navigasi ke summary screen, bawa data aktivitas
-                        navigation.navigate('ActivitySummary', { activity })
-                    },
-                },
-            ]
-        )
-    }
+  return (
+    <View style={s.container}>
+      {/* Full-screen map */}
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFillObject}
+        showsUserLocation
+        followsUserLocation={false}
+        showsMyLocationButton={false}
+        customMapStyle={liveMapStyle}
+      >
+        {polylineCoords.length > 1 && (
+          <Polyline coordinates={polylineCoords} strokeColor="#eea400" strokeWidth={4} />
+        )}
+        {polylineCoords.length > 0 && (
+          <Marker coordinate={polylineCoords[0]} pinColor="green" />
+        )}
+        {polylineCoords.length > 1 && (
+          <Marker coordinate={polylineCoords[polylineCoords.length - 1]} pinColor="white" />
+        )}
+      </MapView>
 
-    const polylineCoords = coordinates.map((c) => ({
-        latitude: c.latitude,
-        longitude: c.longitude,
-    }))
+      {/* UI layer on top of map */}
+      <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
 
-    return (
-        <SafeAreaView style={styles.container}>
-            {/* Peta */}
-            <MapView
-                ref={mapRef}
-                style={styles.map}
-                showsUserLocation
-                followsUserLocation={false} // kita handle manual biar lebih smooth
-                showsMyLocationButton={false}
-            >
-                {/* Garis rute */}
-                {polylineCoords.length > 1 && (
-                    <Polyline
-                        coordinates={polylineCoords}
-                        strokeColor="#1D9E75"
-                        strokeWidth={4}
-                    />
-                )}
-
-                {/* Titik mulai */}
-                {polylineCoords.length > 0 && (
-                    <Marker coordinate={polylineCoords[0]} title="Mulai" pinColor="green" />
-                )}
-            </MapView>
-
-            {/* Panel metrik bawah */}
-            <View style={styles.panel}>
-                {/* Pilih tipe aktivitas — hanya saat belum mulai */}
-                {trackingState === 'idle' && (
-                    <View style={styles.typeRow}>
-                        {(['run', 'ride', 'walk'] as const).map((type) => (
-                            <TouchableOpacity
-                                key={type}
-                                style={[styles.typeBtn, activityType === type && styles.typeBtnActive]}
-                                onPress={() => setActivityType(type)}
-                            >
-                                <Text style={[styles.typeText, activityType === type && styles.typeTextActive]}>
-                                    {type === 'run' ? '🏃 Lari' : type === 'ride' ? '🚴 Bersepeda' : '🚶 Jalan'}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                )}
-
-                {/* Metrik utama */}
-                <View style={styles.metricsRow}>
-                    <View style={styles.metric}>
-                        <Text style={styles.metricValue}>{metrics.distanceKm}</Text>
-                        <Text style={styles.metricLabel}>km</Text>
-                    </View>
-                    <View style={styles.metric}>
-                        <Text style={styles.metricValue}>{duration}</Text>
-                        <Text style={styles.metricLabel}>durasi</Text>
-                    </View>
-                    <View style={styles.metric}>
-                        <Text style={styles.metricValue}>
-                            {trackingState === 'idle' ? "--:--" : metrics.paceFormatted}
-                        </Text>
-                        <Text style={styles.metricLabel}>min/km</Text>
-                    </View>
-                </View>
-
-                {/* Metrik sekunder */}
-                <View style={styles.secondaryRow}>
-                    <Text style={styles.secondary}>🔥 {metrics.calories} kkal</Text>
-                    <Text style={styles.secondary}>⛰ {metrics.elevationGain} m</Text>
-                </View>
-
-                {/* Tombol kontrol */}
-                <View style={styles.controls}>
-                    {trackingState === 'idle' && (
-                        <TouchableOpacity style={styles.btnStart} onPress={handleStart}>
-                            <Text style={styles.btnText}>Mulai</Text>
-                        </TouchableOpacity>
-                    )}
-
-                    {trackingState === 'running' && (
-                        <>
-                            <TouchableOpacity style={styles.btnPause} onPress={handlePause}>
-                                <Text style={styles.btnText}>Pause</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.btnStop} onPress={handleFinish}>
-                                <Text style={styles.btnText}>Selesai</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
-
-                    {trackingState === 'paused' && (
-                        <>
-                            <TouchableOpacity style={styles.btnStart} onPress={handleResume}>
-                                <Text style={styles.btnText}>Lanjut</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.btnStop} onPress={handleFinish}>
-                                <Text style={styles.btnText}>Selesai</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
-                </View>
+        {/* Top overlay: GPS badge + close */}
+        <SafeAreaView edges={['top']}>
+          <View style={s.topBar}>
+            <View style={s.gpsBadge}>
+              <View style={s.gpsDot} />
+              <Text style={s.gpsBadgeText}>GPS</Text>
             </View>
+            <TouchableOpacity style={s.settingsBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="close" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
-    )
+
+        {/* Spacer + recenter button */}
+        <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'flex-end', paddingRight: 16, paddingBottom: 8 }} pointerEvents="box-none">
+          {currentLocation && (
+            <TouchableOpacity style={s.recenterBtn} onPress={handleRecenter}>
+              <Ionicons name="locate" size={20} color="#1A1A2E" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Bottom panel */}
+        <View style={s.panel}>
+
+          {/* Main distance */}
+          <View style={s.distanceRow}>
+            <Text style={s.distanceNum}>{metrics.distanceKm}</Text>
+            <Text style={s.distanceUnit}>KM</Text>
+          </View>
+
+          {/* Stats row */}
+          <View style={s.statsRow}>
+            <View style={s.statItem}>
+              <Text style={s.statVal}>{duration}</Text>
+              <Text style={s.statLbl}>DURASI</Text>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.statItem}>
+              <Text style={s.statVal}>{trackingState === 'idle' ? '--:--' : metrics.paceFormatted}</Text>
+              <Text style={s.statLbl}>PACE</Text>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.statItem}>
+              <Text style={s.statVal}>{metrics.calories}</Text>
+              <Text style={s.statLbl}>KALORI</Text>
+            </View>
+          </View>
+
+          {/* Controls */}
+          {trackingState === 'idle' ? (
+            <TouchableOpacity style={s.btnStart} onPress={handleStart}>
+              <Text style={s.btnStartText}>Mulai Lari</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.controls}>
+              {/* Lock button */}
+              <TouchableOpacity
+                style={[s.btnSecondary, locked && s.btnLocked]}
+                onPress={() => setLocked(v => !v)}
+              >
+                <Ionicons
+                  name={locked ? 'lock-closed' : 'lock-open'}
+                  size={22}
+                  color={locked ? '#eea400' : '#fff'}
+                />
+              </TouchableOpacity>
+
+              {/* Play / Pause */}
+              <TouchableOpacity
+                style={s.btnCenter}
+                onPress={trackingState === 'running' ? handlePause : handleResume}
+              >
+                <Ionicons
+                  name={trackingState === 'running' ? 'pause' : 'play'}
+                  size={28}
+                  color="#1A1A2E"
+                />
+              </TouchableOpacity>
+
+              {/* Stop */}
+              <TouchableOpacity
+                style={[s.btnSecondary, locked && s.btnDisabled]}
+                onPress={handleFinish}
+                disabled={locked}
+              >
+                <Ionicons
+                  name="stop"
+                  size={22}
+                  color={locked ? '#555' : '#fff'}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+        </View>
+      </View>
+    </View>
+  )
 }
-
-const { height } = Dimensions.get('window')
-
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#000' },
-    map: { height: height * 0.55 },
-    panel: {
-        flex: 1, backgroundColor: '#fff',
-        borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        padding: 20, marginTop: -20,
-    },
-    typeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-    typeBtn: {
-        flex: 1, paddingVertical: 8, borderRadius: 8,
-        borderWidth: 0.5, borderColor: '#ddd', alignItems: 'center'
-    },
-    typeBtnActive: { backgroundColor: '#1D9E75', borderColor: '#1D9E75' },
-    typeText: { fontSize: 13, color: '#666' },
-    typeTextActive: { color: '#fff', fontWeight: '600' },
-    metricsRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12 },
-    metric: { alignItems: 'center' },
-    metricValue: { fontSize: 32, fontWeight: '700', color: '#111' },
-    metricLabel: { fontSize: 12, color: '#888', marginTop: 2 },
-    secondaryRow: {
-        flexDirection: 'row', justifyContent: 'center', gap: 32,
-        marginBottom: 20, paddingTop: 12,
-        borderTopWidth: 0.5, borderTopColor: '#eee'
-    },
-    secondary: { fontSize: 14, color: '#555' },
-    controls: { flexDirection: 'row', gap: 12 },
-    btnStart: {
-        flex: 1, backgroundColor: '#1D9E75',
-        padding: 18, borderRadius: 14, alignItems: 'center'
-    },
-    btnPause: {
-        flex: 1, backgroundColor: '#F5A623',
-        padding: 18, borderRadius: 14, alignItems: 'center'
-    },
-    btnStop: {
-        flex: 1, backgroundColor: '#E24B4A',
-        padding: 18, borderRadius: 14, alignItems: 'center'
-    },
-    btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-})
